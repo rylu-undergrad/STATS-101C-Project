@@ -1,0 +1,852 @@
+---
+title: "stats101c final project r code"
+author: "Ruyi Lu"
+date: "2022-11-21"
+output: html_document
+---
+# Remove NAs
+```{r}
+#numerical
+#install.packages("mice")
+#install.packages("VIM")
+library(tidyverse)
+train=read.csv("Acctrain.csv")
+test=read.csv("AcctestNoYNew.csv")
+test=test[,-1]
+
+library(mice)
+library(VIM)
+str(train)
+test.num=test[, c("Start_Lat", "Start_Lng", "End_Lat", "End_Lng", "Distance.mi.", "Temperature.F.", "Wind_Chill.F.", "Humidity...", "Pressure.in.", "Visibility.mi.", "Wind_Speed.mph.")]
+train.num=train[,c("Start_Lat", "Start_Lng", "End_Lat", "End_Lng", "Distance.mi.", "Temperature.F.", "Wind_Chill.F.", "Humidity...", "Pressure.in.", "Visibility.mi.", "Wind_Speed.mph.")]
+
+aggr_plot1=aggr(train.num, col=c('yellow','grey'), numbers=TRUE, sortVars=TRUE, labels=names(train.num), cex.axis=.7, gap=3, ylab=c("Histogram of missing data","Pattern"))
+aggr_plot2=aggr(test.num, col=c('yellow','grey'), numbers=TRUE, sortVars=TRUE, labels=names(test.num), cex.axis=.7, gap=3, ylab=c("Histogram of missing data","Pattern"))
+
+temp.train=mice(train.num,method = "pmm",m=5,seed=1128)
+new.train.num=complete(temp.train)
+sum(is.na(new.train.num))
+names((colSums(is.na(train.num))>0))
+
+temp.test=mice(test.num,method = "pmm",m=5,seed=1128)
+new.test.num=complete(temp.test)
+sum(is.na(new.test.num))
+names(which(colSums(is.na(new.test.num))>0))
+
+#write.csv(new.train.num, "train_num_noNA.csv")
+#write.csv(new.test.num, "test_num_noNA.csv")
+
+
+sum(train$Turning_Loop==TRUE)
+```
+
+
+
+```{r}
+#logical variables
+str(test)
+test.log=test[,c("Amenity", "Bump", "Crossing", "Give_Way", "Junction", "No_Exit", "Railway", "Roundabout", "Station", "Stop", "Traffic_Calming", "Traffic_Signal")]
+train.log=train[,c("Amenity", "Bump", "Crossing", "Give_Way", "Junction", "No_Exit", "Railway", "Roundabout", "Station", "Stop", "Traffic_Calming", "Traffic_Signal")]
+
+temp.train=mice(train.log,method = "logreg",m=5,seed=1128)
+new.train.log=complete(temp.train)
+sum(is.na(new.train.log))
+new.train.log=ifelse(new.train.log==TRUE, 1, 0)
+
+temp.test=mice(test.log,method = "logred",m=5,seed=1128)
+new.test.log=complete(temp.test)
+sum(is.na(new.test.log))
+names(which(colSums(is.na(new.test.log))>0))
+new.test.log=ifelse(new.test.log==TRUE, 1, 0)
+
+#write.csv(new.train.log, "train_log_noNA.csv")
+#write.csv(new.test.log, "test_log_noNA.csv")
+```
+
+
+```{r}
+#categorical variables
+#install.packages("missForest")
+
+#remove Country and Turning_Loop, which only have one unique value
+library(missForest)
+test.cat=test[,c("Start_Time", "End_Time", "Description","Street", "Side", "City", "County", "State", "Zipcode", "Airport_Code", "Timezone", "Wind_Direction", "Weather_Condition", "Sunrise_Sunset", "Civil_Twilight", "Nautical_Twilight", "Astronomical_Twilight", "Weather_Timestamp")]
+
+train.cat=train[,c("Start_Time", "End_Time", "Description","Street", "Side", "City", "County", "State", "Zipcode", "Airport_Code", "Timezone", "Wind_Direction", "Weather_Condition", "Sunrise_Sunset", "Civil_Twilight", "Nautical_Twilight", "Astronomical_Twilight", "Weather_Timestamp")]
+
+train.cat$Weather_Timestamp=strptime(train.cat$Weather_Timestamp, "%Y-%m-%dT%H:%M:%SZ")
+test.cat$Weather_Timestamp=strptime(test.cat$Weather_Timestamp, "%Y-%m-%dT%H:%M:%SZ")
+
+#create new predictors out of weather timestamp
+#install.packages("lubridate")
+library(lubridate)
+
+train.timechar=as.character(train.cat$Weather_Timestamp)
+train.time.mode=names(which.max(table(train.timechar)))
+train.time.mode=strptime(train.time.mode, "%Y-%m-%d %H:%M:%S")
+
+test.timechar=as.character(test.cat$Weather_Timestamp)
+test.time.mode=names(which.max(table(test.timechar)))
+test.time.mode=strptime(test.time.mode, "%Y-%m-%dT%H:%M:%SZ")
+print(train.time.mode)
+
+str(train.cat)
+#remove NAs
+train.cat=train.cat %>% mutate(City = if_else(is.na(City), names(which.max(table(City))), City)) %>% 
+  mutate(Zipcode=if_else(is.na(Zipcode), names(which.max(table(Zipcode))), Zipcode)) %>% 
+  mutate(Airport_Code=if_else(is.na(Airport_Code), names(which.max(table(Airport_Code))), Airport_Code)) %>% 
+  mutate(Wind_Direction=if_else(is.na(Wind_Direction), names(which.max(table(Wind_Direction))), Wind_Direction)) %>% 
+  mutate(Weather_Condition=if_else(is.na(Weather_Condition), names(which.max(table(Weather_Condition))), Weather_Condition)) %>% 
+  mutate(Weather_Timestamp=if_else(is.na(Weather_Timestamp), train.time.mode, Weather_Timestamp)) %>% mutate(Timezone=if_else(is.na(Timezone), names(which.max(table(Timezone))), Timezone))
+
+colSums(is.na(train.cat))
+
+train.cat$Weather_Timestamp_yr=year(train.cat$Weather_Timestamp)
+train.cat$Weather_Timestamp_mo=month(train.cat$Weather_Timestamp)
+train.cat$Weather_Timestamp_day=day(train.cat$Weather_Timestamp)
+train.cat$Weather_Timestamp_hr=hour(train.cat$Weather_Timestamp)
+train.cat$Weather_Timestamp_min=minute(train.cat$Weather_Timestamp)
+train.cat$Weather_Timestamp=as.character(train.cat$Weather_Timestamp)
+train.cat=select(train.cat, -"Weather_Timestamp")
+
+
+for(i in 1:nrow(train.cat)){
+  if(is.na(train.cat$Nautical_Twilight[i])==TRUE){
+  train.cat$Nautical_Twilight[i]=ifelse(train.cat$Weather_Timestamp_hr[i]>=18, "Night", "Day")
+  temp=train.cat$Nautical_Twilight[i]
+  train.cat$Sunrise_Sunset=temp
+  train.cat$Civil_Twilight=temp
+  train.cat$Astronomical_Twilight=temp
+  }
+}
+colSums(is.na(train.cat))
+
+test.cat=test.cat %>% mutate(City = if_else(is.na(City), names(which.max(table(City))), City)) %>% 
+  mutate(Zipcode=if_else(is.na(Zipcode), names(which.max(table(Zipcode))), Zipcode)) %>% 
+  mutate(Airport_Code=if_else(is.na(Airport_Code), names(which.max(table(Airport_Code))), Airport_Code)) %>% 
+  mutate(Wind_Direction=if_else(is.na(Wind_Direction), names(which.max(table(Wind_Direction))), Wind_Direction)) %>% 
+  mutate(Weather_Condition=if_else(is.na(Weather_Condition), names(which.max(table(Weather_Condition))), Weather_Condition)) %>% 
+  mutate(Weather_Timestamp=if_else(is.na(Weather_Timestamp), train.time.mode, Weather_Timestamp)) %>% mutate(Timezone=if_else(is.na(Timezone), names(which.max(table(Timezone))), Timezone))
+
+test.cat$Weather_Timestamp_yr=year(test.cat$Weather_Timestamp)
+test.cat$Weather_Timestamp_mo=month(test.cat$Weather_Timestamp)
+test.cat$Weather_Timestamp_day=day(test.cat$Weather_Timestamp)
+test.cat$Weather_Timestamp_hr=hour(test.cat$Weather_Timestamp)
+test.cat$Weather_Timestamp_min=minute(test.cat$Weather_Timestamp)
+test.cat=select(test.cat, -"Weather_Timestamp")
+
+for(i in 1:nrow(test.cat)){
+  if(is.na(test.cat$Nautical_Twilight[i])==TRUE){
+  test.cat$Nautical_Twilight[i]=ifelse(test.cat$Weather_Timestamp_hr[i]>=18, "Night", "Day")
+  temp=test.cat$Nautical_Twilight[i]
+  test.cat$Sunrise_Sunset=temp
+  test.cat$Civil_Twilight=temp
+  test.cat$Astronomical_Twilight=temp
+  }
+}
+colSums(is.na(test.cat))
+
+
+```
+
+```{r}
+#combining the datasets
+new.train=cbind(train$Severity, new.train.num, new.train.log, train.cat)
+new.test=cbind(new.test.num, new.test.log, test.cat)
+
+colnames(new.train)[1] ="Severity"
+
+#write.csv(new.train, "train_noNA.csv")
+#write.csv(new.test, "test_noNA.csv")
+
+colSums(is.na(new.train))
+sum(is.na(new.train))
+str(new.train)
+
+colSums(is.na(new.test))
+names(test)
+sum(is.na(new.test))
+dim(new.test)
+```
+
+
+# Add variables: Time_Length, Season
+```{r}
+new.train$Start_Time=strptime(new.train$Start_Time, "%Y-%m-%dT%H:%M:%SZ")
+new.train$End_Time=strptime(new.train$End_Time, "%Y-%m-%dT%H:%M:%SZ")
+new.test$Start_Time=strptime(new.test$Start_Time, "%Y-%m-%dT%H:%M:%SZ")
+new.test$End_Time=strptime(new.test$End_Time, "%Y-%m-%dT%H:%M:%SZ")
+
+new.train$Time_length <- with(new.train, difftime(new.train$End_Time, new.train$Start_Time, units="hours"))
+new.test$Time_length <- with(new.test, difftime(new.test$End_Time, new.test$Start_Time, units="hours"))
+new.train$Time_length <- gsub(' hours','',new.train$Time_length)
+new.train$Time_length <- round(as.numeric(new.train$Time_length), digits=5)
+new.test$Time_length <- gsub(' hours','',new.test$Time_length)
+new.test$Time_length <- round(as.numeric(new.test$Time_length), digits=5)
+
+new.train$Month <- month(new.train$Start_Time)
+new.test$Month <- month(new.test$Start_Time)
+
+for(i in 1:nrow(new.train)){
+  if(new.train$Month[i] >= 3 &&  new.train$Month[i] <= 5){
+    new.train$Season[i] <- "Spring"
+  }else if(new.train$Month[i] >= 6 && new.train$Month[i] <= 8){
+    new.train$Season[i] <- "Summer"
+  }else if(new.train$Month[i] >= 9 && new.train$Month[i] <= 11){
+    new.train$Season[i] <- "Fall"
+  }else{
+    new.train$Season[i] <- "Winter"
+  }
+}
+
+for(i in 1:nrow(new.test)){
+  if(new.test$Month[i] >= 3 &&  new.test$Month[i] <= 5){
+    new.test$Season[i] <- "Spring"
+  }else if(new.test$Month[i] >= 6 && new.test$Month[i] <= 8){
+    new.test$Season[i] <- "Summer"
+  }else if(new.test$Month[i] >= 9 && new.test$Month[i] <= 11){
+    new.test$Season[i] <- "Fall"
+  }else{
+    new.test$Season[i] <- "Winter"
+  }
+}
+
+new.train <-dplyr::select(new.train, -c('Month','End_Time','Start_Time'))
+new.test <-dplyr::select(new.test, -c('Month','End_Time','Start_Time'))
+
+dim(new.train)
+new.train <- new.train %>% separate(Timezone, c("Country", "Timezone"), "/", extra = "merge")
+new.train <-dplyr::select(new.train, -c('Country'))
+
+new.test <- new.test %>% separate(Timezone, c("Country", "Timezone"), "/", extra = "merge")
+new.test <-dplyr::select(new.test, -c('Country'))
+
+sum(is.na(new.train))
+sum(is.na(new.test))
+```
+
+
+
+
+```{r}
+#change 'zipcode'
+
+#install.packages('zipcodeR')
+library(zipcodeR)
+#download data
+zip_us <- data(zip_code_db)
+zipcode_pop_density <- data.frame(zipcode = zip_code_db$zipcode, pop_density = zip_code_db$population_density) 
+
+library(dplyr)
+library(tidyr)
+#zip_us$zipcode only 5 digit zipcode; need to deal with the zipcode in train data and test data first
+new.train <- new.train %>% separate(Zipcode, c("zipcode", "rest"), "-", extra = "merge")
+new.train <-dplyr::select( new.train, -c('rest'))
+
+#left join
+#key is Zipcode; population_density is variable
+# Left join 
+new.train <- new.train %>% left_join(zipcode_pop_density, by="zipcode")
+#Keep zipcode predictor( delete later : I want to try this predictor as.factor in XGboost model)
+
+new.train$pop_density=ifelse(is.na(new.train$pop_density)==TRUE, mean(new.train$pop_density, na.rm = TRUE), new.train$pop_density)
+#Check if have any NAs
+sum(is.na(new.train$pop_density))
+
+
+#test
+new.test <- new.test %>% separate(Zipcode, c("zipcode", "rest"), "-", extra = "merge")
+new.test <-dplyr::select( new.test, -c('rest'))
+new.test <- new.test %>% left_join(zipcode_pop_density, by="zipcode")
+new.test$pop_density=ifelse(is.na(new.test$pop_density)==TRUE, mean(new.test$pop_density, na.rm = TRUE), new.test$pop_density)
+sum(is.na(new.test$pop_density))
+
+
+```
+
+
+```{r}
+#change of 'description' to logical variable for training data
+
+new.train$Description = tolower(new.train$Description)
+sum(new.train$`train$Severity` == "SEVERE")
+
+#install.packages("sjmisc")
+library(sjmisc)
+
+severe_dscrp=c("closed due to accident", "closed between",
+               "closed at","closed from","two lanes blocked",
+               "secondary accident")
+
+description1=str_detect(new.train$Description, "closed due to accident")
+description2=str_detect(new.train$Description, "closed between")
+description3=str_detect(new.train$Description, "closed at")
+description4=str_detect(new.train$Description, "closed from")
+description5=str_detect(new.train$Description, "two lanes blocked")
+description6=str_detect(new.train$Description, "secondary accident")
+
+description1=ifelse(description1==TRUE, 1, 0)
+description2=ifelse(description2==TRUE, 1, 0)
+description3=ifelse(description3==TRUE, 1, 0)
+description4=ifelse(description4==TRUE, 1, 0)
+description5=ifelse(description5==TRUE, 1, 0)
+description6=ifelse(description6==TRUE, 1, 0)
+
+df = data.frame(description1,description2,description3,
+              description4,description5,description6)
+
+description_severity = rowSums(df)
+description_severity = ifelse(description_severity>0, 1, 0)
+df = cbind(df, description_severity)
+
+new.train = cbind(new.train, description_severity)
+
+#check accuracy of description keyword selection
+library(tidyverse)
+small.data <- select(new.train, c("Severity","Description", "description_severity"))
+num.error <- 0
+for(i in 1:nrow(small.data)){
+  if(small.data$Severity[i]=="MILD" && small.data$description_severity[i] == 1 || small.data$Severity[i]=="SEVERE" && small.data$description_severity[i] == 0){
+    num.error <- num.error + 1
+  }
+}
+accuracy <- 1 - num.error/nrow(small.data)
+accuracy
+#the accuracy of description severity selection is over 93%
+
+
+
+#test data
+new.test$Description = tolower(new.test$Description)
+
+description1=str_detect(new.test$Description, "closed due to accident")
+description2=str_detect(new.test$Description, "closed between")
+description3=str_detect(new.test$Description, "closed at")
+description4=str_detect(new.test$Description, "closed from")
+description5=str_detect(new.test$Description, "two lanes blocked")
+description6=str_detect(new.test$Description, "secondary accident")
+
+description1=ifelse(description1==TRUE, 1, 0)
+description2=ifelse(description2==TRUE, 1, 0)
+description3=ifelse(description3==TRUE, 1, 0)
+description4=ifelse(description4==TRUE, 1, 0)
+description5=ifelse(description5==TRUE, 1, 0)
+description6=ifelse(description6==TRUE, 1, 0)
+
+df = data.frame(description1,description2,description3,
+              description4,description5,description6)
+
+description_severity = rowSums(df)
+description_severity = ifelse(description_severity>0, 1, 0)
+df = cbind(df, description_severity)
+
+new.test = cbind(new.test, description_severity)
+
+#write.csv(train, "1124_fulltrain_noNA_description_popdensity.csv")
+#write.csv(test, "1124_fulltest_noNA_description_popdensity.csv")
+
+dim(new.train)
+```
+
+
+```{r}
+#1124
+#add variable: change in lat&lng
+
+#add index number to training and test data
+new.train$`...1`=c(1:nrow(new.train))
+new.test$`...1`=c(1:nrow(new.test))
+
+#displacement
+displacement=data.frame("...1"=c(1:35000))
+displacement$delta_lat=abs(new.train$End_Lat-new.train$Start_Lat)
+displacement$delta_lng=abs(new.train$End_Lng-new.train$Start_Lng)
+
+new.train=merge(new.train,displacement, by="...1")
+dim(new.train)
+sum(is.na(new.train))
+
+#add to testting data
+displacement=data.frame("...1"=c(1:15000))
+displacement$delta_lat=abs(new.test$End_Lat-new.test$Start_Lat)
+displacement$delta_lng=abs(new.test$End_Lng-new.test$Start_Lng)
+
+new.test=merge(new.test,displacement, by="...1")
+dim(new.test)
+sum(is.na(new.test))
+
+#write.csv(train, "1124_train_noNA_description_popdensity_displacement.csv")
+#write.csv(test, "1124_test_noNA_description_popdensity_displacement.csv")
+
+
+#new.test=read_csv("1201_test_noNA_description_popdensity_displacement_isday_rushhour_weatherchanged_insurance.csv")
+#new.train=read_csv("1201_train_noNA_description_popdensity_displacement_isday_rushhour_weatherchanged_insurance.csv")
+
+#sum(is.na(delta_lng))
+#displacement$pos_change=sqrt(displacement$delta_lat^2+displacement$delta_lng^2)
+```
+
+
+```{r}
+#1127 add new variable: is day and is night
+sunrise_sunset=ifelse(new.train$Sunrise_Sunset=="Day", 1, 0)
+civil_twi=ifelse(new.train$Civil_Twilight=="Day", 1, 0)
+nautical_twi=ifelse(new.train$Nautical_Twilight=="Day", 1, 0)
+astro_twi=ifelse(new.train$Astronomical_Twilight=="Day", 1, 0)
+
+day_night=data.frame("sunrise_sunset"=sunrise_sunset, 
+                     "civil_twi"=civil_twi, 
+                     "nautical_twi"=nautical_twi, 
+                     "astro_twi"=astro_twi)
+day_night$Day_Night=rowSums(day_night)
+day_night$Day_Night=ifelse(day_night$Day_Night>=3, 1, 0)
+new.train$Is_Day=day_night$Day_Night
+
+#testing data
+
+sunrise_sunset=ifelse(new.test$Sunrise_Sunset=="Day", 1, 0)
+civil_twi=ifelse(new.test$Civil_Twilight=="Day", 1, 0)
+nautical_twi=ifelse(new.test$Nautical_Twilight=="Day", 1, 0)
+astro_twi=ifelse(new.test$Astronomical_Twilight=="Day", 1, 0)
+
+day_night2=data.frame("sunrise_sunset"=sunrise_sunset, 
+                     "civil_twi"=civil_twi, 
+                     "nautical_twi"=nautical_twi, 
+                     "astro_twi"=astro_twi)
+day_night2$Day_Night=rowSums(day_night2)
+day_night2$Day_Night=ifelse(day_night2$Day_Night>=3, 1, 0)
+
+new.test$Is_Day=day_night2$Day_Night
+
+dim(new.train)
+dim(new.test)
+sum(is.na(new.train))
+sum(is.na(new.test))
+
+#write.csv(train, "1127_train_noNA_description_popdensity_displacement_isday.csv")
+#write.csv(test, "1127_test_noNA_description_popdensity_displacement_isday.csv")
+```
+
+```{r}
+#1129 add variable: is rush hour
+#train
+#train=read.csv("1127_train_noNA_description_popdensity_displacement_isday.csv")
+#test=read.csv("1127_test_noNA_description_popdensity_displacement_isday.csv")
+#weather timestamp in local time, rush hours are 7-10 and 16-19
+
+morning_rushhour=ifelse(new.train$Weather_Timestamp_hr>=7 & new.train$Weather_Timestamp_hr<=10, 1, 0)
+afternoon_rushhour=ifelse(new.train$Weather_Timestamp_hr>=16 & new.train$Weather_Timestamp_hr<=19, 1, 0)
+df=data.frame(morning_rushhour, afternoon_rushhour)
+df$rush_hour=rowSums(df)
+unique(df$rush_hour)
+new.train$rush_hour=df$rush_hour
+
+#test
+morning_rushhour=ifelse(new.test$Weather_Timestamp_hr>=7 & new.test$Weather_Timestamp_hr<=10, 1, 0)
+afternoon_rushhour=ifelse(new.test$Weather_Timestamp_hr>=16 & new.test$Weather_Timestamp_hr<=19, 1, 0)
+df=data.frame(morning_rushhour, afternoon_rushhour)
+df$rush_hour=rowSums(df)
+unique(df$rush_hour)
+new.test$rush_hour=df$rush_hour
+
+
+dim(new.train)
+dim(new.test)
+sum(is.na(new.train))
+sum(is.na(new.test))
+
+#write.csv(train, "1130_train_noNA_description_popdensity_displacement_isday_rushhour.csv")
+#write.csv(test, "1130_test_noNA_description_popdensity_displacement_isday_rushhour.csv")
+
+```
+
+```{r}
+#revise current variable: weather condition
+#train=read_csv("1130_train_noNA_description_popdensity_displacement_isday_rushhour.csv")
+#test=read_csv("1130_test_noNA_description_popdensity_displacement_isday_rushhour.csv")
+
+
+library(car)
+new.train$Weather_Condition=recode(new.train$Weather_Condition, 'c("Partly Cloudy", "Mostly Cloudy", "Scattered Clouds", "Mostly Cloudy / Windy", "Cloudy / Windy", "Partly Cloudy / Windy")="Cloudy"')
+new.train$Weather_Condition=recode(new.train$Weather_Condition, 'c("Light Rain", "Drizzle", "Light Drizzle", "Light Rain / Windy", "Light Rain Shower", "Light Rain Shower / Windy", "Light Freezing Drizzle", "Drizzle / Windy", "N/A Precipitation", "Light Freezing Rain" )="Light Rain"')
+new.train$Weather_Condition=recode(new.train$Weather_Condition, 'c("Heavy Rain", "Heavy Rain / Windy", "Heavy Drizzle", "Rain Shower", "Rain / Windy", "Freezing Rain", "Showers in the Vicinity")="Rain"')
+new.train$Weather_Condition=recode(new.train$Weather_Condition, 'c("Thunder in the Vicinity", "T-Storm", "Heavy T-Storm", "Thunder", "Heavy T-Storm / Windy",  "Thunder / Windy", "Light Thunderstorms and Rain", "Thunderstorms and Rain", "Heavy Thunderstorms and Rain", "Light Rain with Thunder")="Thunderstorm"')
+new.train$Weather_Condition=recode(new.train$Weather_Condition, 'c("Smoke", "Mist", "Drizzle and Fog", "Fog / Windy", "Haze", "Haze / Windy", "Shallow Fog", "Patches of Fog", "Light Freezing Fog")="Fog"')
+new.train$Weather_Condition=recode(new.train$Weather_Condition, 'c("Squalls / Windy", "Fair / Windy", "Widespread Dust / Windy", "Blowing Dust / Windy")="Windy"')
+new.train$Weather_Condition=recode(new.train$Weather_Condition, 'c("Light Snow", "Light Snow Shower", "Snow / Windy" , "Blowing Snow", "Light Snow / Windy", "Light Snow Showers")="Snow"')
+new.train$Weather_Condition=recode(new.train$Weather_Condition, 'c("Light Ice Pellets", "Snow and Sleet")="Ice Pellets"')
+new.train$Weather_Condition=recode(new.train$Weather_Condition, 'c("Heavy Snow / Windy")="Heavy Snow"')
+new.train$Weather_Condition=recode(new.train$Weather_Condition, 'c("Wintry Mix / Windy")="Wintry Mix"')
+new.train$Weather_Condition=recode(new.train$Weather_Condition, 'c("Blowing Dust", "Widespread Dust")="Dust"')
+
+unique(new.train$Weather_Condition)
+sum(is.na(new.train))
+
+
+#test
+new.test$Weather_Condition=recode(new.test$Weather_Condition, 'c("Partly Cloudy", "Mostly Cloudy", "Scattered Clouds", "Mostly Cloudy / Windy", "Cloudy / Windy", "Partly Cloudy / Windy")="Cloudy"')
+new.test$Weather_Condition=recode(new.test$Weather_Condition, 'c("Light Rain", "Drizzle", "Light Drizzle", "Light Rain / Windy", "Light Rain Shower", "Light Rain Shower / Windy", "Light Freezing Drizzle", "Drizzle / Windy", "N/A Precipitation", "Light Freezing Rain", "Light Drizzle / Windy" )="Light Rain"')
+new.test$Weather_Condition=recode(new.test$Weather_Condition, 'c("Heavy Rain", "Heavy Rain / Windy", "Heavy Drizzle", "Rain Shower", "Rain / Windy", "Freezing Rain", "Showers in the Vicinity")="Rain"')
+new.test$Weather_Condition=recode(new.test$Weather_Condition, 'c("Thunder in the Vicinity", "T-Storm", "Heavy T-Storm", "Thunder", "Heavy T-Storm / Windy",  "Thunder / Windy", "Light Thunderstorms and Rain", "Thunderstorms and Rain", "Heavy Thunderstorms and Rain", "Light Rain with Thunder", "T-Storm / Windy", "Tornado")="Thunderstorm"')
+new.test$Weather_Condition=recode(new.test$Weather_Condition, 'c("Smoke", "Mist", "Drizzle and Fog", "Fog / Windy", "Haze", "Haze / Windy", "Shallow Fog", "Patches of Fog", "Light Freezing Fog", "Smoke / Windy")="Fog"')
+new.test$Weather_Condition=recode(new.test$Weather_Condition, 'c("Squalls / Windy", "Fair / Windy", "Widespread Dust / Windy", "Blowing Dust / Windy")="Windy"')
+new.test$Weather_Condition=recode(new.test$Weather_Condition, 'c("Light Snow", "Light Snow Shower", "Snow / Windy" , "Blowing Snow", "Light Snow / Windy", "Light Snow Showers")="Snow"')
+new.test$Weather_Condition=recode(new.test$Weather_Condition, 'c("Light Ice Pellets", "Snow and Sleet", "Heavy Sleet")="Ice Pellets"')
+new.test$Weather_Condition=recode(new.test$Weather_Condition, 'c("Heavy Snow / Windy")="Heavy Snow"')
+new.test$Weather_Condition=recode(new.test$Weather_Condition, 'c("Wintry Mix / Windy")="Wintry Mix"')
+new.test$Weather_Condition=recode(new.test$Weather_Condition, 'c("Blowing Dust", "Widespread Dust")="Dust"')
+
+unique(new.test$Weather_Condition)
+sum(is.na(new.test))
+
+dim(new.train)
+dim(new.test)
+
+```
+
+
+
+```{r}
+#car insurance
+car_insrn=read_csv("insurance.csv")
+insurance=car_insrn[,c(1,2)]
+insurance$State=state.abb[match(insurance$State,state.name)]
+new.train=left_join(new.train, insurance, by="State")
+names(which(colSums(is.na(new.train)) > 0))
+new.train=new.train %>% rename("Full_coverage" = "Full coverage")
+names(new.train)
+new.train$Full_coverage=ifelse(is.na(new.train$Full_coverage)==TRUE, mean(new.train$Full_coverage, na.rm = T), new.train$Full_coverage)
+sum(is.na(new.train))
+
+new.test=left_join(new.test, insurance, by="State")
+names(which(colSums(is.na(new.test)) > 0))
+new.test=new.test %>% rename("Full_coverage" = "Full coverage")
+new.test$Full_coverage=ifelse(is.na(new.test$Full_coverage)==TRUE, mean(new.test$Full_coverage, na.rm = T), new.test$Full_coverage)
+sum(is.na(new.test))
+
+sum(is.na(new.train))
+sum(is.na(new.test))
+dim(new.train)
+dim(new.test)
+
+#write.csv(train, "1201_train_noNA_description_popdensity_displacement_isday_rushhour_weatherchanged_insurance.csv")
+#write.csv(test, "1201_test_noNA_description_popdensity_displacement_isday_rushhour_weatherchanged_insurance.csv")
+
+```
+
+
+
+# Now we are done with data cleaning and predictor transformation
+
+```{r}
+#1130 EDA
+#correlation plot
+
+sum(is.na(new.train))
+sum(is.na(new.test))
+#summary(train)
+dim(train)
+#temp=select(train, -c("...1", "Severity", "Description","Street", "Side", "City", "County", "State", "zipcode", "Airport_Code", "Timezone", "Wind_Direction", "Weather_Condition", "Sunrise_Sunset", "Civil_Twilight", "Nautical_Twilight", "Astronomical_Twilight", "Season"))
+library(corrplot)
+numerical_data_subset <- train[,-c(1,2,27,28,29,30,31,32,34,35,36,37:42)]
+str(numerical_data_subset)
+M <- cor(numerical_data_subset)
+corrplot(M)
+
+#density plot
+set.seed(1128)
+index=sample(c(1:35000), 5000)
+ggplot(train[index,], aes(x=Distance.mi., color=Severity, fill=Severity)) + geom_density(alpha=0.3)
+
+```
+
+```{r}
+#train-test split, relative importance of all predictors with rf
+library(tidyverse)
+library(randomForest)
+library(dplyr)
+
+train=read_csv("1201_train_noNA_description_popdensity_displacement_isday_rushhour_weatherchanged_insurance.csv")
+test=read_csv("1201_test_noNA_description_popdensity_displacement_isday_rushhour_weatherchanged_insurance.csv")
+
+#bar plot for severe_description
+#ggplot(train[index, ], aes(x = description_severity, fill = Severity, color=Severity)) + geom_bar(alpha=0.3)
+
+
+set.seed(1128)
+index=sample(1:35000, 35000*0.7)
+training=select(train,-c("...1", "Description", "Street", "City", "zipcode", "Airport_Code", "County", "Wind_Direction"))
+mock.train=training[index,]
+mock.test=training[-index,]
+
+#install.packages("randomForest")
+library(randomForest)
+forestfit.RF <- randomForest(as.factor(Severity)~.,data = mock.train, mtry = 5,ntree = 500, importance = TRUE)
+prediction <- predict(forestfit.RF, newdata = mock.test)
+table(prediction, mock.test$Severity)
+varImpPlot(forestfit.RF, type = 2)
+varImpPlot(forestfit.RF, type = 1)
+varImpPlot(forestfit.RF, scale = F)
+
+```
+
+
+```{r}
+train_subset <- dplyr::select(train, c("Severity","description_severity","End_Lng","End_Lat","Weather_Timestamp_yr",
+                                       "State","Distance.mi.","Time_length","Timezone","Pressure.in.","Wind_Chill.F.",
+                                       "Weather_Timestamp_mo","pop_density","Weather_Timestamp_hr","Humidity...",
+                                       "Season","Nautical_Twilight","Wind_Speed.mph.","Weather_Condition","Full_coverage"))
+
+test_subset <- dplyr::select(test, c("description_severity","End_Lng","End_Lat","Weather_Timestamp_yr",
+                                       "State","Distance.mi.","Time_length","Timezone","Pressure.in.","Wind_Chill.F.",
+                                       "Weather_Timestamp_mo","pop_density","Weather_Timestamp_hr","Humidity...",
+                                       "Season","Nautical_Twilight","Wind_Speed.mph.","Weather_Condition","Full_coverage"))
+
+# this step turns categorical predictors into factor
+fac_index_train <- c(1,6,9,16,17,19) 
+train_subset[, fac_index_train] <- lapply(train_subset[, fac_index_train], factor)
+
+fac_index_test <- c(5,8,15,16,18)
+test_subset[, fac_index_test] <- lapply(test_subset[, fac_index_test], factor)
+
+```
+
+
+## KNN
+```{r}
+# KNN Model code
+#install.packages("Rfast")
+library(Rfast)
+train_subset_scale <- scale(train_subset[, -c(1, 6, 9, 16, 17, 19)])
+test_subset_scale <- scale(test_subset[, -c(5, 8, 15, 16, 18)])
+
+k <- seq(10, sqrt(nrow(train_subset)) + 10, 10)
+
+knn <- Rfast::knn.cv(folds = NULL, nfolds = 10, stratified = TRUE, seed = FALSE, 
+                     y = as.factor(train_subset$Severity), x = as.matrix(train_subset_scale), 
+                     k = k, dist.type = "euclidean", type = "C", method = "average", 
+                     freq.option = 0, pred.ret = TRUE, mem.eff = FALSE)
+pred.error <- 1 - knn$crit
+pred.error
+pred.error[which.min(pred.error)]
+ktop <- k[which.min(pred.error)]
+
+library(class)
+knn_fit <- knn(train_subset_scale, test_subset_scale, train_subset$Severity, k = ktop)
+
+#prediction_KNN <- data.frame(Ob = seq(length(knn_fit)),SEVERITY = ifelse(knn_fit == "MILD", "MILD", "SEVERE"))
+#head(prediction_KNN)
+
+```
+
+
+# Random Forest
+```{r}
+#random forest
+set.seed(1128)
+index=sample(1:35000, 35000*0.7)
+mock.train=train_subset[index,]
+mock.test=train_subset[-index,]
+
+library(randomForest)
+rf=randomForest(as.factor(Severity)~., data=mock.train, ntree=250,importance=T,mtry=5)
+print(rf)
+pred=predict(rf, newdata=mock.test)
+test.prediction=predict(rf, newdata = mock.test)
+mean(pred!=mock.test$Severity)
+
+#rf_prediction <- data.frame(Ob = seq(length(testoutput)),SEVERITY = ifelse(test.prediction == "MILD", "MILD", "SEVERE"))
+
+```
+
+
+
+## LDA
+```{r}
+library(MASS)
+library(caret)
+
+lda.fit=lda(Severity~., data=mock.train)
+pred=predict(lda.fit, mock.train)$class
+tab=table(Predicted = pred, Actual = mock.train$Severity)
+print(confusionMatrix(tab))
+paste("Misclassification rate =", mean(pred!=mock.train$Severity))
+
+lda = lda(Severity~., data=mock.test)
+pred=predict(qda, mock.test)$class
+tab=table(Predicted = pred, Actual = mock.test$Severity)
+print(confusionMatrix(tab))
+paste("Misclassification rate =", mean(pred!=mock.test$Severity))
+
+#test.prediction=predict(lda.fit, test_subset)
+#rf_prediction <- data.frame(Ob = seq(length(testoutput)),SEVERITY = ifelse(test.prediction == "MILD", "MILD", "SEVERE"))
+```
+
+
+
+## QDA
+```{r}
+#qda for training data
+qda = qda(Severity~description_severity+End_Lng+End_Lat+Weather_Timestamp_yr+Distance.mi.+Time_length+Timezone+Pressure.in.+Wind_Chill.F.+Weather_Timestamp_mo+pop_density+Weather_Timestamp_hr+Humidity...+Season+Nautical_Twilight+Wind_Speed.mph.+Full_coverage, data=mock.train)
+pred=predict(qda, mock.train)$class
+tab=table(Predicted = pred, Actual = mock.train$Severity)
+print(confusionMatrix(tab))
+
+#qda for testing data
+qda = qda(Severity~description_severity+End_Lng+End_Lat+Weather_Timestamp_yr+Distance.mi.+Time_length+Timezone+Pressure.in.+Wind_Chill.F.+Weather_Timestamp_mo+pop_density+Weather_Timestamp_hr+Humidity...+Season+Nautical_Twilight+Wind_Speed.mph.+Full_coverage, data=mock.test)
+pred=predict(qda, mock.test)$class
+tab=table(Predicted = pred, Actual = mock.test$Severity)
+print(confusionMatrix(tab))
+1-0.9177
+
+
+```
+
+
+## XGBoost
+```{r}
+# XGBoost Model code
+set.seed(1128)
+
+## data prep
+library(dplyr)
+library(rsample)
+library(recipes)
+library(parsnip)
+library(dials)
+library(yardstick)
+library(doParallel)
+all_cores <- parallel::detectCores(logical = FALSE)
+registerDoParallel(cores = all_cores)
+
+## Xgboost model tuning
+
+## Starting to tune the model
+### Step I: xgb_spec: Specifying all kinds of hypeparameters we need to tune for the model
+
+xgb_spec <- boost_tree(
+  trees = tune(), 
+  tree_depth = tune(), min_n = tune(), 
+  loss_reduction = tune(),                     ## first three: model complexity
+  sample_size = tune(), mtry = tune(),         ## randomness
+  learn_rate = tune(),                         ## step size
+) %>% 
+  set_engine("xgboost") %>% 
+  set_mode("classification")
+
+### Step II: xgb_grid: randomly create some hypeparameters to avoid bias
+### try to output xgb_grid to see what happen
+
+xgb_grid <- grid_latin_hypercube(
+  trees(), 
+  tree_depth(),
+  min_n(),
+  loss_reduction(),
+  sample_size = sample_prop(),
+  finalize(mtry(), train_subset),
+  learn_rate(),
+  size = 10 #tRY DIFF SIZE:10,20,30,40,50
+)
+
+### Step III: Workflow
+library(tidymodels)
+xgb_wf <- workflow() %>%
+  add_formula(Severity ~ .) %>%
+  add_model(xgb_spec)
+
+set.seed(101)
+vb_folds <- vfold_cv(train_subset, strata = Severity)
+
+doParallel::registerDoParallel()
+
+set.seed(1128) ### Don't forget to set seed whenever using Xgboost models
+
+################ WARNING: THE PART BELOW MAY RUN LONGER THAN YOU EXPECTED AS THE SIZE IN xgb_grid GROWS
+################ Write down the result every single time
+xgb_res <- tune_grid(
+  xgb_wf,
+  resamples = vb_folds,
+  grid = xgb_grid,
+  control = control_grid(save_pred = TRUE)
+)
+
+### Step IV: This is a part to see the result and determine by what hypeparameters the roc_auc can be highest
+### If still couldn't understand, ask me
+
+collect_metrics(xgb_res)
+
+show_best(xgb_res, "roc_auc")
+
+best_auc <- select_best(xgb_res, "roc_auc")
+
+final_xgb <- finalize_workflow(
+  xgb_wf,
+  best_auc
+)
+
+### fit the model on the train data and predict on the test data
+
+xgboost_fit <- fit(final_xgb, train_subset)
+prediction_xgboost <- predict(xgboost_fit, test_subset)
+prediction_xgboost
+sum(prediction_xgboost=="SEVERE")
+
+# XGBoost Error rate
+#xgboost_error_rate <- mean(prediction_xgboost != testY[,2])
+
+```
+
+
+
+```{r}
+# prediction results generating
+
+### KNN
+#write.csv(prediction_KNN,"knn_predict.csv")
+# dim(prediction_KNN)
+# sum(prediction_KNN=="SEVERE")
+
+### LDA
+#write.csv(prediction_LDA,"lda_predict.csv")
+# dim(prediction_LDA)
+# sum(prediction_LDA=="SEVERE")
+
+### QDA
+#write.csv(prediction_QDA,"qda_predict.csv")
+# dim(prediction_QDA)
+# sum(prediction_QDA=="SEVERE")
+
+### RANDOMFOREST
+#write.csv(prediction_RF,"randomForest_predict.csv")
+# dim(prediction_RF)
+# sum(prediction_RF=="SEVERE")
+
+### XGBOOST
+#write.csv(prediction_xgboost, "xgboost_predict.csv")
+# dim(prediction_xgboost)
+# sum(prediction_xgboost=="SEVERE")
+
+```
+
+```{r}
+#majority vote combining all model performances
+#rf=read_csv("randomForest_predict.csv")
+#knn=read_csv("knn_predict.csv")
+#xgb=read_csv("xgboost_predict.csv")
+
+#rf$SEVERITY=ifelse(rf$SEVERITY=="SEVERE", 1, 0)
+#knn$SEVERITY=ifelse(knn$SEVERITY=="SEVERE", 1, 0)
+#xgb$SEVERITY=ifelse(xgb$SEVERITY=="SEVERE", 1, 0)
+
+#new=merge(rf, knn, by="Ob")
+#new=merge(new, xgb, by="Ob")
+
+#new=new[,-1]
+#new$final_severity=rowSums(new)
+
+#result=ifelse(new$final_severity>1, "SEVERE", "MILD")
+#res=data.frame("Ob"=c(1:15000), "SEVERITY"=result)
+
+#write.csv(res, "rf_knn_xgb_majorityvote1202.csv")
+```
+
